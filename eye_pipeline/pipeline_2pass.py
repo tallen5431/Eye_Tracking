@@ -9,6 +9,7 @@ from eye_ops.intensity import step2_intensity
 from eye_ops.masks import mask_percentile, mask_adaptive
 from eye_ops.geometry import fit_ellipse
 from eye_ops.crop_map import crop_rotated_by_green_bbox, apply_padding
+from eye_ops.density_refine import refine_best_with_density
 
 
 # ----------------------------
@@ -142,6 +143,30 @@ def run_pipeline_core(
     chosen_mask = m_pct
     method = "percentile"
 
+    # Step 3c: Density Map
+    # Optional: refine "best" using density of the mask (recommended for fine pass)
+    if is_fine and bool(getattr(S, "USE_DENSITY_REFINE_FINE", False)):
+        best_d, ell_d, dens_u8, dens_mask01 = refine_best_with_density(
+            m_pct,
+            k=int(getattr(S, "DENSITY_K_FINE", 31)),
+            density_thr=int(getattr(S, "DENSITY_THR_FINE", 120)),
+            min_area=int(min_area_eff),
+            max_area=int(max_area_eff),
+        )
+        if best_d is not None:
+            best = best_d
+            ellipse = ell_d
+            # store for visualization/debug if you want
+            chosen_mask = dens_mask01
+            # optional: store density image
+            # (handy for notebook column)
+            density_map_u8 = dens_u8
+        else:
+            density_map_u8 = None
+    else:
+        density_map_u8 = None
+
+
     # Optional adaptive + repick
     if bool(S.USE_ADAPTIVE):
         m_adp = mask_adaptive(gray)
@@ -185,6 +210,7 @@ def run_pipeline_core(
         "roi_small": roi_small,
         "gray": gray,
         "mask_pct": m_pct,
+        "density_u8": density_map_u8,
         "mask_final": chosen_mask,
         "viz": viz,
         "method": method,

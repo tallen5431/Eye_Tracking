@@ -87,6 +87,12 @@ FILL_HOLES = False
 # FILL_HOLES_FINE = False
 FILL_HOLES_FINE = False
 
+# Density-refine (optional): fit overlays using high-density regions of the mask
+USE_DENSITY_REFINE_FINE = True
+DENSITY_K_FINE = 31
+DENSITY_THR_FINE = 120   # 0..255 (higher = only very dense regions)
+
+
 # ============================================================
 # 5) PASS A/B — Blob selection filters
 # ============================================================
