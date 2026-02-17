@@ -90,7 +90,7 @@ FILL_HOLES_FINE = False
 # Density-refine (optional): fit overlays using high-density regions of the mask
 USE_DENSITY_REFINE_FINE = True
 DENSITY_K_FINE = 31
-DENSITY_THR_FINE = 120   # 0..255 (higher = only very dense regions)
+DENSITY_THR_FINE = 40   # 0..255 (higher = only very dense regions)
 
 
 # ============================================================
@@ -132,7 +132,7 @@ PAD_REL = 0.0
 # Downscale factor applied to the *cropped* ROI before processing.
 # 1.0 = full-res crop; 0.5 = half-res crop (faster).
 # DOWNSCALE_FINE = 0.1
-DOWNSCALE_FINE = 1
+DOWNSCALE_FINE = 0.4
 
 # Fine-pass mask tuning (overrides coarse if set)
 # PCT_FINE = 10

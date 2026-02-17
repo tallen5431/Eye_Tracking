@@ -142,9 +142,10 @@ def run_pipeline_core(
     labels = labels_pct
     chosen_mask = m_pct
     method = "percentile"
+    ellipse = None            # <-- ADD THIS (prevents UnboundLocalError)
+    density_map_u8 = None     # <-- optional but keeps things consistent
 
-    # Step 3c: Density Map
-    # Optional: refine "best" using density of the mask (recommended for fine pass)
+    # Step 3c: Density Map (fine pass only)
     if is_fine and bool(getattr(S, "USE_DENSITY_REFINE_FINE", False)):
         best_d, ell_d, dens_u8, dens_mask01 = refine_best_with_density(
             m_pct,
@@ -156,16 +157,9 @@ def run_pipeline_core(
         if best_d is not None:
             best = best_d
             ellipse = ell_d
-            # store for visualization/debug if you want
             chosen_mask = dens_mask01
-            # optional: store density image
-            # (handy for notebook column)
             density_map_u8 = dens_u8
-        else:
-            density_map_u8 = None
-    else:
-        density_map_u8 = None
-
+            method = "density"
 
     # Optional adaptive + repick
     if bool(S.USE_ADAPTIVE):
@@ -177,13 +171,13 @@ def run_pipeline_core(
             chosen_mask = m_adp
             method = "adaptive"
 
-    # Step 4: ellipse
+    # Step 4: ellipse (only if we don't already have one from density refine)
     g = time.perf_counter()
-    ellipse = None
-    if bool(S.DO_ELLIPSE) and best is not None:
+    if ellipse is None and bool(S.DO_ELLIPSE) and best is not None:
         ellipse = fit_ellipse(labels, best["id"])
     h = time.perf_counter()
     t["ellipse"] = h - g
+
 
     # Step 5: viz overlay (DEV ONLY)
     viz = None

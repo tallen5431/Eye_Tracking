@@ -2,51 +2,30 @@
 import numpy as np
 import cv2
 
+
+def _odd(k: int) -> int:
+    k = int(k)
+    return k if (k % 2 == 1) else (k + 1)
+
+
 def mask_density(mask01: np.ndarray, k: int = 31) -> np.ndarray:
-    """Local dark-pixel density from a 0/1 mask. Returns uint8 0..255."""
+    """
+    Local dark-pixel density from a 0/1 mask.
+    Returns uint8 0..255.
+    """
+    k = _odd(k)
     m = mask01.astype(np.float32)
     dens = cv2.boxFilter(m, ddepth=-1, ksize=(k, k), normalize=True)
-    return (dens * 255).astype(np.uint8)
+    return (dens * 255.0).astype(np.uint8)
 
-def pick_component_from_mask01(mask01: np.ndarray, *, min_area: int, max_area: int):
-    """Pick best component like your existing scorer. mask01 is 0/1."""
-    num, labels, stats_, centroids = cv2.connectedComponentsWithStats(
-        (mask01 * 255).astype(np.uint8), connectivity=8
-    )
-    h, w = mask01.shape[:2]
-    cx0, cy0 = w / 2.0, h / 2.0
 
-    best = None
-    best_score = -1e18
-    for i in range(1, num):
-        x, y, ww, hh, area = stats_[i]
-        if area < min_area or area > max_area:
-            continue
-        cx, cy = centroids[i]
-        aspect = max(ww / max(hh, 1), hh / max(ww, 1))
-        dist = np.hypot(cx - cx0, cy - cy0)
-        score = area - 40 * dist - 400 * (aspect - 1.0)
-        if score > best_score:
-            best_score = score
-            best = {
-                "id": i,
-                "bbox": (int(x), int(y), int(ww), int(hh)),
-                "area": int(area),
-                "center": (float(cx), float(cy)),
-            }
-    return best, labels
+def _mask01_to_255(mask01: np.ndarray) -> np.ndarray:
+    return (mask01.astype(np.uint8) * 255)
 
-def fit_ellipse_from_labels(labels: np.ndarray, comp_id: int):
-    ys, xs = np.where(labels == comp_id)
-    if len(xs) < 20:
-        return None
-    pts = np.stack([xs, ys], axis=1).astype(np.int32).reshape(-1, 1, 2)
-    if len(pts) < 5:
-        return None
-    try:
-        return cv2.fitEllipse(pts)
-    except Exception:
-        return None
+
+def _mask255_to_01(mask255: np.ndarray) -> np.ndarray:
+    return (mask255 > 0).astype(np.uint8)
+
 
 def refine_best_with_density(
     mask01: np.ndarray,
@@ -55,16 +34,73 @@ def refine_best_with_density(
     density_thr: int = 120,
     min_area: int = 300,
     max_area: int = 250000,
+    close_k: int = 0,
 ):
     """
-    Returns (best, ellipse, dens_u8, dens_mask01).
-    dens_mask01 is the thresholded high-density binary mask used for fitting.
-    """
-    dens = mask_density(mask01, k=k)
-    dens_mask01 = (dens >= int(density_thr)).astype(np.uint8)
+    FAST density refine (union-fit):
+      - builds density map on mask01
+      - thresholds to dens_mask
+      - optional morphological CLOSE to bridge glare gaps
+      - computes bbox + center from ALL dense pixels (no components)
+      - fits ellipse on ALL dense pixels
 
-    best, labels = pick_component_from_mask01(dens_mask01, min_area=min_area, max_area=max_area)
+    Returns: (best, ellipse, dens_u8, dens_mask01)
+
+    best is:
+      {"id": 1, "bbox": (x,y,w,h), "area": area_px, "center": (cx,cy)}
+    ellipse is cv2.fitEllipse format or None
+    dens_mask01 is 0/1 mask (thresholded density, after optional close)
+    """
+    dens_u8 = mask_density(mask01, k=k)
+
+    # Threshold to binary (255) for OpenCV routines
+    dens_mask255 = np.where(dens_u8 >= int(density_thr), 255, 0).astype(np.uint8)
+
+    # Optional: CLOSE to connect islands / seal glare gaps
+    if int(close_k) > 0:
+        kk = int(close_k)
+        if kk % 2 == 0:
+            kk += 1
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kk, kk))
+        dens_mask255 = cv2.morphologyEx(dens_mask255, cv2.MORPH_CLOSE, kernel)
+
+    # Find all non-zero pixels (C-optimized)
+    pts = cv2.findNonZero(dens_mask255)
+    if pts is None:
+        return None, None, dens_u8, _mask255_to_01(dens_mask255)
+
+    area = int(len(pts))
+    if area < int(min_area) or area > int(max_area):
+        # Still return density outputs for debug, but no detection
+        return None, None, dens_u8, _mask255_to_01(dens_mask255)
+
+    # BBox from all points (C-optimized)
+    x, y, w, h = cv2.boundingRect(pts)
+
+    # Center from image moments (C-optimized)
+    M = cv2.moments(dens_mask255, binaryImage=True)
+    if M.get("m00", 0.0) > 0.0:
+        cx = float(M["m10"] / M["m00"])
+        cy = float(M["m01"] / M["m00"])
+    else:
+        # Fallback: bbox center
+        cx = float(x + w * 0.5)
+        cy = float(y + h * 0.5)
+
+    best = {
+        "id": 1,
+        "bbox": (int(x), int(y), int(w), int(h)),
+        "area": int(area),
+        "center": (cx, cy),
+    }
+
+    # Ellipse from ALL points (needs >=5)
     ellipse = None
-    if best is not None:
-        ellipse = fit_ellipse_from_labels(labels, best["id"])
-    return best, ellipse, dens, dens_mask01
+    if area >= 5:
+        try:
+            ellipse = cv2.fitEllipse(pts)
+        except Exception:
+            ellipse = None
+
+    dens_mask01 = _mask255_to_01(dens_mask255)
+    return best, ellipse, dens_u8, dens_mask01
