@@ -167,6 +167,33 @@ MAX_AREA_FINE = 250000
 
 
 # ============================================================
+# 9b) PASS B (FINE) — Glare / bright-pixel mask
+# ============================================================
+# When enabled, bright pixels (specular reflections / glare) are detected
+# AFTER the first ROI crop and subtracted from the dark pupil mask so that
+# glare does not break the pupil blob apart.
+#
+# Only applied during the FINE pass (after coarse ROI is known).
+USE_GLARE_MASK_FINE = False
+
+# Percentile used to call a pixel "bright" (e.g. 99 → top 1% brightest).
+GLARE_PCT_FINE = 99
+
+# Gaussian blur before glare thresholding (odd; 1 disables blur).
+GLARE_BLUR_K_FINE = 3
+
+# Morphological opening (removes tiny specks); 0 to disable.
+GLARE_OPEN_K_FINE = 3
+
+# Morphological closing (fills glare blob gaps); 0 to disable.
+GLARE_CLOSE_K_FINE = 11
+
+# Optional dilation of the glare mask before subtraction (grows exclusion zone).
+# 0 to disable.
+GLARE_DILATE_K_FINE = 0
+
+
+# ============================================================
 # 10) DEV / DEBUG — overlay drawing controls (timing + visualization)
 # ============================================================
 # These only affect the "viz" images (debug overlays).

@@ -6,7 +6,7 @@ import cv2
 from eye_ops import settings as S
 from eye_ops.roi import crop_roi
 from eye_ops.intensity import step2_intensity
-from eye_ops.masks import mask_percentile, mask_adaptive
+from eye_ops.masks import mask_percentile, mask_percentile_bright, mask_adaptive
 from eye_ops.geometry import fit_ellipse
 from eye_ops.crop_map import crop_rotated_by_green_bbox, apply_padding
 from eye_ops.density_refine import refine_best_with_density
@@ -127,7 +127,13 @@ def run_pipeline_core(
         )
     else:
         _, m_pct = mask_percentile(gray, fill=fill_holes)
-    
+
+    # Step 3-glare: subtract bright glare regions from the dark pupil mask (fine pass only)
+    glare_mask = None
+    if is_fine and bool(getattr(S, "USE_GLARE_MASK_FINE", False)):
+        _, glare_mask = mask_percentile_bright(gray)
+        m_pct = np.clip(m_pct.astype(np.int16) - glare_mask.astype(np.int16), 0, 1).astype(np.uint8)
+
     e = time.perf_counter()
     t["threshold"] = e - d
 
@@ -209,6 +215,7 @@ def run_pipeline_core(
         "roi_small": roi_small,
         "gray": gray,
         "mask_pct": m_pct,
+        "glare_mask": glare_mask,
         "density_u8": density_map_u8,
         "mask_final": chosen_mask,
         "viz": viz,
