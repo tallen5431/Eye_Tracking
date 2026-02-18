@@ -110,12 +110,44 @@ def run_pipeline_core(
 
     # Step 3: percentile mask
     is_fine = area_scale_ref_factor is not None  # coarse uses None, fine uses coarse ref
-    
+
+    # Step 3-pre (coarse only): bright-guided ROI constraint
+    # Find a bright region (sclera / eye surround), then restrict the dark
+    # pupil search to pixels that fall within it.  This stops distant dark
+    # distractors (eyelashes, shadows, clothing) from winning the blob pick.
+    coarse_bright_mask = None
+    gray_for_dark = gray   # may be replaced by a spatially masked copy below
+    if not is_fine and bool(getattr(S, "USE_BRIGHT_COARSE", False)):
+        _, bright_m = mask_percentile_bright(
+            gray,
+            pct=float(getattr(S, "BRIGHT_COARSE_PCT", 85)),
+            blur_k=int(getattr(S, "BRIGHT_COARSE_BLUR_K", 5)),
+            open_k=int(getattr(S, "BRIGHT_COARSE_OPEN_K", 0)),
+            close_k=int(getattr(S, "BRIGHT_COARSE_CLOSE_K", 15)),
+            dilate_k=int(getattr(S, "BRIGHT_COARSE_DILATE_K", 5)),
+        )
+        # Pick the largest / most central bright blob as the eye-region anchor
+        bright_min = int(getattr(S, "BRIGHT_COARSE_MIN_AREA", 0))
+        bright_max = int(getattr(S, "BRIGHT_COARSE_MAX_AREA", 250000))
+        best_bright, _ = pick_component_scaled(bright_m, bright_min, bright_max)
+        if best_bright is not None:
+            coarse_bright_mask = bright_m
+            # Build a constraint mask: 1 inside the bright blob's bbox, 0 outside
+            bx, by, bw, bh = best_bright["bbox"]
+            constraint = np.zeros_like(gray, dtype=np.uint8)
+            constraint[by:by + bh, bx:bx + bw] = 1
+            # Also include any bright pixel that survived morphology (full blob, not just bbox)
+            constraint = np.clip(constraint + bright_m, 0, 1).astype(np.uint8)
+            # Outside the constraint region → set to 255 so those pixels are
+            # never selected by the dark (g < thr) threshold
+            gray_for_dark = gray.copy()
+            gray_for_dark[constraint == 0] = 255
+
     # Choose fill-holes toggle (fine can override)
     fill_holes = getattr(S, "FILL_HOLES", True)
     if is_fine:
         fill_holes = getattr(S, "FILL_HOLES_FINE", fill_holes)
-    
+
     if is_fine and hasattr(S, "PCT_FINE"):
         _, m_pct = mask_percentile(
             gray,
@@ -126,7 +158,7 @@ def run_pipeline_core(
             fill=fill_holes,
         )
     else:
-        _, m_pct = mask_percentile(gray, fill=fill_holes)
+        _, m_pct = mask_percentile(gray_for_dark, fill=fill_holes)
 
     # Step 3-glare: subtract bright glare regions from the dark pupil mask (fine pass only)
     glare_mask = None
@@ -215,6 +247,7 @@ def run_pipeline_core(
         "roi_small": roi_small,
         "gray": gray,
         "mask_pct": m_pct,
+        "coarse_bright_mask": coarse_bright_mask,
         "glare_mask": glare_mask,
         "density_u8": density_map_u8,
         "mask_final": chosen_mask,

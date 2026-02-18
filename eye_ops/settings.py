@@ -51,6 +51,40 @@ MEDIAN_K = 2
 
 
 # ============================================================
+# 3b) PASS A (COARSE) — Bright-guided ROI
+# ============================================================
+# When enabled, the coarse pass first finds a bright region (sclera /
+# surrounding eye tissue) and uses its bounding box to constrain where
+# the dark pupil blob is searched.  Pixels outside the bright region are
+# masked out before the dark percentile step, so distant dark distractors
+# (eyelashes, shadows, clothing) cannot be picked as the pupil.
+#
+# Falls back to unconstrained dark mask if no bright blob is found.
+USE_BRIGHT_COARSE = False
+
+# Percentile above which a pixel is called "bright" (e.g. 85 → top 15%).
+BRIGHT_COARSE_PCT = 85
+
+# Gaussian blur before bright thresholding.
+BRIGHT_COARSE_BLUR_K = 5
+
+# Morphological opening (removes small bright speckles); 0 to disable.
+BRIGHT_COARSE_OPEN_K = 0
+
+# Morphological closing (bridges gaps in the bright eye region).
+BRIGHT_COARSE_CLOSE_K = 15
+
+# Dilation applied to the bright mask before using it as a search window.
+# Grows the constraint region so the pupil (which sits just inside the
+# bright sclera boundary) is fully included.
+BRIGHT_COARSE_DILATE_K = 5
+
+# Area bounds for the bright blob selector (in coarse roi_small pixels).
+BRIGHT_COARSE_MIN_AREA = 0
+BRIGHT_COARSE_MAX_AREA = 250000
+
+
+# ============================================================
 # 4) PASS A/B — Thresholding + Morph Cleanup
 # ============================================================
 # Percentile threshold: pixels darker than this percentile become mask=1
