@@ -188,9 +188,38 @@ class EyeAnimApp:
         self.info = tk.Label(self.root, text="", fg="#dddddd", bg=self.BG, font=("Consolas", 10), justify="left")
         self.info.place(x=8, y=8)
 
+        # --- Stage indicator panel (bottom strip) ---
+        self.INDICATOR_H = 54   # height of the strip in pixels
+        self.indicator = tk.Canvas(
+            self.root,
+            height=self.INDICATOR_H,
+            bg="#0d0d0d",
+            highlightthickness=1,
+            highlightbackground="#222222",
+        )
+        self.indicator.pack(side="bottom", fill="x")
+
+        # Stage badge colours  (FINE=green, COARSE=orange, NONE=dark)
+        self._STAGE_COLORS = {
+            "FINE":   ("#00c853", "#000000"),   # (bg, fg)
+            "COARSE": ("#ff6d00", "#000000"),
+            "NONE":   ("#333333", "#888888"),
+            "":       ("#333333", "#888888"),
+        }
+        # Timing bar canvas item ids (created in first draw)
+        self._ind_badge_id: Optional[int] = None
+        self._ind_badge_txt: Optional[int] = None
+        self._ind_timing_bg: Optional[int] = None
+        self._ind_timing_bar: Optional[int] = None
+        self._ind_label_id: Optional[int] = None
+        self._ind_skipped_id: Optional[int] = None
+        self._ind_ms_id: Optional[int] = None
+        self._MAX_TIMING_MS = 100.0   # full bar = this many ms
+
         # Build graphics
         self._pixels = []  # list: [item_id, pcx, pcy, zone]
         self._draw_static()
+        self._draw_indicator_static()
 
         # Keybinds
         self.root.bind("<Escape>", lambda e: self.root.destroy())
@@ -202,6 +231,7 @@ class EyeAnimApp:
     def _on_resize(self):
         # Rebuild geometry when window is resized
         self._draw_static()
+        self._draw_indicator_static()
 
     def _draw_static(self):
         self.canvas.delete("all")
@@ -261,6 +291,96 @@ class EyeAnimApp:
             self.cx0 - self.SPARK_R, self.cy0 - self.SPARK_R,
             self.cx0 + self.SPARK_R, self.cy0 + self.SPARK_R,
             fill="white", outline=""
+        )
+
+    def _draw_indicator_static(self):
+        """Build the static skeleton of the stage indicator strip."""
+        self.indicator.delete("all")
+        iw = max(10, self.indicator.winfo_width() or self.win_w)
+        ih = self.INDICATOR_H
+
+        BADGE_W = 80
+        BAR_X0  = BADGE_W + 8
+        BAR_H   = 10
+        BAR_Y   = ih // 2 - BAR_H // 2 + 4
+
+        # Badge placeholder (filled by _update_indicator)
+        self._ind_badge_id = self.indicator.create_rectangle(
+            4, 6, BADGE_W - 2, ih - 6, fill="#333333", outline="", tags="badge"
+        )
+        self._ind_badge_txt = self.indicator.create_text(
+            BADGE_W // 2, ih // 2, text="--",
+            fill="#888888", font=("Consolas", 13, "bold"), tags="badge_txt"
+        )
+
+        # Timing bar background
+        self._ind_timing_bg = self.indicator.create_rectangle(
+            BAR_X0, BAR_Y, iw - 8, BAR_Y + BAR_H,
+            fill="#1a1a1a", outline="#333333"
+        )
+        # Timing bar fill (starts at zero width)
+        self._ind_timing_bar = self.indicator.create_rectangle(
+            BAR_X0, BAR_Y, BAR_X0, BAR_Y + BAR_H,
+            fill="#00c853", outline=""
+        )
+
+        # Stage name label (left of bar, under badge)
+        self._ind_label_id = self.indicator.create_text(
+            BAR_X0, BAR_Y - 10, anchor="w",
+            text="stage: --", fill="#888888", font=("Consolas", 9)
+        )
+        # ms label (right of bar)
+        self._ind_ms_id = self.indicator.create_text(
+            iw - 10, BAR_Y - 10, anchor="e",
+            text="--ms", fill="#888888", font=("Consolas", 9)
+        )
+        # "fine skipped" note
+        self._ind_skipped_id = self.indicator.create_text(
+            BAR_X0, BAR_Y + BAR_H + 10, anchor="w",
+            text="", fill="#ff6d00", font=("Consolas", 8)
+        )
+
+        # Store layout constants for update use
+        self._ind_BADGE_W = BADGE_W
+        self._ind_BAR_X0  = BAR_X0
+        self._ind_BAR_Y   = BAR_Y
+        self._ind_BAR_H   = BAR_H
+        self._ind_IW      = iw
+
+    def _update_indicator(self, stage: str, timing_ms: float, fine_skipped: bool):
+        """Refresh the stage indicator strip every tick."""
+        if self._ind_badge_id is None:
+            return   # not yet built
+
+        iw = max(self._ind_IW, 10)
+        BAR_X0 = self._ind_BAR_X0
+        BAR_Y  = self._ind_BAR_Y
+        BAR_H  = self._ind_BAR_H
+
+        # Badge colour
+        bg_col, fg_col = self._STAGE_COLORS.get(stage, ("#333333", "#888888"))
+        self.indicator.itemconfig(self._ind_badge_id,  fill=bg_col)
+        self.indicator.itemconfig(self._ind_badge_txt, text=stage or "--", fill=fg_col)
+
+        # Timing bar width
+        frac = min(1.0, max(0.0, timing_ms / self._MAX_TIMING_MS))
+        bar_x1 = BAR_X0 + int(frac * (iw - 8 - BAR_X0))
+        bar_col = "#00c853" if timing_ms < 30 else "#ffab00" if timing_ms < 60 else "#ff3d00"
+        self.indicator.coords(
+            self._ind_timing_bar, BAR_X0, BAR_Y, max(BAR_X0 + 1, bar_x1), BAR_Y + BAR_H
+        )
+        self.indicator.itemconfig(self._ind_timing_bar, fill=bar_col)
+
+        # Labels
+        self.indicator.itemconfig(
+            self._ind_label_id, text=f"stage: {stage or 'NONE'}"
+        )
+        self.indicator.itemconfig(
+            self._ind_ms_id, text=f"{timing_ms:.1f}ms"
+        )
+        self.indicator.itemconfig(
+            self._ind_skipped_id,
+            text="⚠ fine pass skipped" if fine_skipped else ""
         )
 
     def _clear_calibration(self):
@@ -381,6 +501,9 @@ class EyeAnimApp:
                 f"(ESC quit, 'c' recal)"
             )
         )
+
+        # Update stage indicator strip
+        self._update_indicator(stage, tms, fine_skipped > 0.5)
 
     def _tick(self):
         s = self.tracker.read()
