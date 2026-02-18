@@ -47,20 +47,20 @@ CLAHE_TILE = (8, 8)
 BLACKHAT_K = 21
 
 # Median blur params (only used in median_gray)
-MEDIAN_K = 5
+MEDIAN_K = 2
 
 
 # ============================================================
 # 4) PASS A/B — Thresholding + Morph Cleanup
 # ============================================================
 # Percentile threshold: pixels darker than this percentile become mask=1
-# PCT = 10 Original
-PCT = 5
+# PCT = 15 Original
+PCT = 1
 
 # Gaussian blur kernel size used before thresholding (odd recommended)
-# BLUR_K = 1
-# BLUR_K = 3
-BLUR_K = 11
+BLUR_K = 3
+# BLUR_K = 9
+# BLUR_K = 0
 # BLUR_K = 17
 # BLUR_K = 27
 
@@ -77,8 +77,9 @@ OPEN_K = 0
 # CLOSE_K = 1
 # CLOSE_K = 3
 # CLOSE_K = 5
-# CLOSE_K = 9
-CLOSE_K = 15
+# CLOSE_K = 17
+CLOSE_K = 35
+# CLOSE_K = 0
 
 # Hole fill (fix glare "donuts")
 FILL_HOLES = False
@@ -89,8 +90,12 @@ FILL_HOLES_FINE = False
 
 # Density-refine (optional): fit overlays using high-density regions of the mask
 USE_DENSITY_REFINE_FINE = True
-DENSITY_K_FINE = 31
+DENSITY_K_FINE = 35 #Smoothing of the mask, density gradient
 DENSITY_THR_FINE = 40   # 0..255 (higher = only very dense regions)
+
+# Density-refine ellipse behavior (fine)
+DENSITY_ELLIPSE_MODE_FINE = "weighted"   # "weighted" or "component"
+DENSITY_COVER_FRAC_FINE = 0.50           # 0.85..0.95 typical (Total density the ellipse tries to cover)
 
 
 # ============================================================
@@ -120,11 +125,11 @@ DO_ELLIPSE = True
 # 8) CROP STEP — From coarse bbox → padded crop on FULL ROTATED
 # ============================================================
 # Padding around mapped bbox (full-image pixels and relative fraction)
-# PAD_PX = 50
-PAD_PX = 50
+# PAD_PX = 0
+PAD_PX = 100
 
 PAD_REL = 0.0
-# PAD_REL = 0.1
+# PAD_REL = 0.5
 
 # ============================================================
 # 9) PASS B (FINE) — Run pipeline on the padded crop
@@ -132,22 +137,23 @@ PAD_REL = 0.0
 # Downscale factor applied to the *cropped* ROI before processing.
 # 1.0 = full-res crop; 0.5 = half-res crop (faster).
 # DOWNSCALE_FINE = 0.1
-DOWNSCALE_FINE = 0.4
+DOWNSCALE_FINE = 0.2
 
 # Fine-pass mask tuning (overrides coarse if set)
 # PCT_FINE = 10
-PCT_FINE = 5
+PCT_FINE = 5 #Controls how much of the heat map there is by darkest pixels.
 
 # Fine-pass mask tuning
 
 # BLUR_K_FINE = 1         # or 11 if glare is strong
-BLUR_K_FINE = 0         # or 11 if glare is strong
+BLUR_K_FINE = 0         # or 11 if glare is strong, Rounds edges of heat map
 # BLUR_K_FINE = 35
 
 OPEN_K_FINE = 0
-# OPEN_K_FINE = 3          # lower opening so you don't break blobs
+# OPEN_K_FINE = 3  # lower opening so you don't break blobs
 
-CLOSE_K_FINE = 0        # increase closing to bridge glare gaps
+# CLOSE_K_FINE = 0
+CLOSE_K_FINE = 17        # increase closing to bridge glare gaps, closes holes in heat map
 # CLOSE_K_FINE = 27        # increase closing to bridge glare gaps
 # CLOSE_K_FINE = 35        # increase closing to bridge glare gaps
 # CLOSE_K_FINE = 55

@@ -153,13 +153,18 @@ def run_pipeline_core(
             density_thr=int(getattr(S, "DENSITY_THR_FINE", 120)),
             min_area=int(min_area_eff),
             max_area=int(max_area_eff),
-        )
+            ellipse_mode=str(getattr(S, "DENSITY_ELLIPSE_MODE_FINE", "weighted")),
+            cover_frac=float(getattr(S, "DENSITY_COVER_FRAC_FINE", 0.90)),
+        )  
+        density_map_u8 = dens_u8
+        chosen_mask = dens_mask01
+        method = "density"
+    
         if best_d is not None:
             best = best_d
+        if ell_d is not None:
             ellipse = ell_d
-            chosen_mask = dens_mask01
-            density_map_u8 = dens_u8
-            method = "density"
+
 
     # Optional adaptive + repick
     if bool(S.USE_ADAPTIVE):
