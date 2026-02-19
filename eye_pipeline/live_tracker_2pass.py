@@ -388,6 +388,8 @@ def main():
     preview_scale = float(os.environ.get("PREVIEW_SCALE", "0.75"))
     window_name   = os.environ.get("PREVIEW_WINDOW", "2-pass Tracker Preview")
     density_k     = int(os.environ.get("DENSITY_K_PREVIEW", "31"))
+    preview_x     = int(os.environ.get("PREVIEW_X", "-1"))
+    preview_y     = int(os.environ.get("PREVIEW_Y", "-1"))
 
     if disable_viz:
         S.DRAW_VIZ_COARSE = False
@@ -405,10 +407,10 @@ def main():
     if cam_h > 0: cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(cam_h))
     if cam_fps > 0: cap.set(cv2.CAP_PROP_FPS,        float(cam_fps))
 
-    # --- view state ---
-    left_mode  = 0   # index into STAGE_NAMES for left panel
-    right_mode = 4   # index for right panel (fine mask by default)
-    split_view = False
+    # --- view state (configurable via env for tuning presets) ---
+    left_mode  = int(os.environ.get("PREVIEW_LEFT_MODE", "0"))
+    right_mode = int(os.environ.get("PREVIEW_RIGHT_MODE", "4"))
+    split_view = os.environ.get("PREVIEW_SPLIT", "0") in ("1", "true", "True")
     show_overlay = True
     paused = False
 
@@ -421,6 +423,8 @@ def main():
 
     if preview:
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+        if preview_x >= 0 and preview_y >= 0:
+            cv2.moveWindow(window_name, preview_x, preview_y)
 
     n_modes = len(STAGE_NAMES)
 
