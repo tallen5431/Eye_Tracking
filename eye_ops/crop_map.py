@@ -28,7 +28,11 @@ def crop_rotated_by_green_bbox(rotated_img_bgr, res):
     if best is None:
         return None, None
 
-    bbox_small = best["bbox"]
+    # Prefer the bright∩dark intersection bbox (tighter crop around agreed pupil region)
+    # if it was computed during the coarse pass; fall back to the blob bbox.
+    intersect_bbox = res.get("coarse_intersection_bbox", None)
+    bbox_small = intersect_bbox if intersect_bbox is not None else best["bbox"]
+
     roi_origin = res["roi_origin"]
     scale = float(res["scale"])
 

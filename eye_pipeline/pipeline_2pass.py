@@ -6,7 +6,7 @@ import cv2
 from eye_ops import settings as S
 from eye_ops.roi import crop_roi
 from eye_ops.intensity import step2_intensity
-from eye_ops.masks import mask_percentile, mask_percentile_bright, mask_adaptive
+from eye_ops.masks import mask_percentile, mask_percentile_bright, mask_adaptive, _odd
 from eye_ops.geometry import fit_ellipse
 from eye_ops.crop_map import crop_rotated_by_green_bbox, apply_padding
 from eye_ops.density_refine import refine_best_with_density
@@ -116,6 +116,7 @@ def run_pipeline_core(
     # pupil search to pixels that fall within it.  This stops distant dark
     # distractors (eyelashes, shadows, clothing) from winning the blob pick.
     coarse_bright_mask = None
+    coarse_intersection_bbox = None   # bbox (x,y,w,h) of bright∩dark agreement region
     gray_for_dark = gray   # may be replaced by a spatially masked copy below
     if not is_fine and bool(getattr(S, "USE_BRIGHT_COARSE", False)):
         _, bright_m = mask_percentile_bright(
@@ -142,6 +143,22 @@ def run_pipeline_core(
             # never selected by the dark (g < thr) threshold
             gray_for_dark = gray.copy()
             gray_for_dark[constraint == 0] = 255
+
+            # Compute dark mask NOW (before morph) to find bright∩dark intersection bbox.
+            # We use a raw percentile on gray_for_dark to get the dark agreement pixels,
+            # then take the bounding box of bright∩dark as the crop target.
+            _blur_k = _odd(int(getattr(S, "BLUR_K", 9)))
+            _g_dark = cv2.GaussianBlur(gray_for_dark, (_blur_k, _blur_k), 0)
+            _pct = float(getattr(S, "PCT", 10))
+            _thr = float(np.percentile(_g_dark[_g_dark < 255], _pct) if np.any(_g_dark < 255) else np.percentile(_g_dark, _pct))
+            _dark_raw = (_g_dark < _thr).astype(np.uint8)
+            # Intersection: pixels that are dark AND inside the bright region
+            _intersect = np.bitwise_and(_dark_raw, constraint)
+            if _intersect.any():
+                ys, xs = np.where(_intersect)
+                ix, iy = int(xs.min()), int(ys.min())
+                iw, ih = int(xs.max()) - ix + 1, int(ys.max()) - iy + 1
+                coarse_intersection_bbox = (ix, iy, iw, ih)
 
     # Choose fill-holes toggle (fine can override)
     fill_holes = getattr(S, "FILL_HOLES", True)
@@ -248,6 +265,7 @@ def run_pipeline_core(
         "gray": gray,
         "mask_pct": m_pct,
         "coarse_bright_mask": coarse_bright_mask,
+        "coarse_intersection_bbox": coarse_intersection_bbox,
         "glare_mask": glare_mask,
         "density_u8": density_map_u8,
         "mask_final": chosen_mask,
