@@ -144,18 +144,6 @@ def _hud(img: np.ndarray, lines: list[str], color=(0, 255, 0)) -> np.ndarray:
     return out
 
 
-def _stage_badge(img: np.ndarray, label: str) -> np.ndarray:
-    """Coloured badge in top-right showing FINE / COARSE / NONE."""
-    colors = {"FINE": (0, 200, 0), "COARSE": (0, 180, 255), "NONE": (60, 60, 60)}
-    col = colors.get(label, (120, 120, 120))
-    h, w = img.shape[:2]
-    tw, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)[0], None
-    x0 = w - tw[0] - 14
-    cv2.rectangle(img, (x0 - 4, 4), (w - 4, 30), col, -1)
-    cv2.putText(img, label, (x0, 24),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 0), 2, cv2.LINE_AA)
-    return img
-
 
 # ---------------------------------------------------------------------------
 # Per-mode rendering
@@ -283,41 +271,54 @@ def _build_display(left: np.ndarray, right: np.ndarray | None,
                    left_name: str, right_name: str,
                    stage_label: str, fps: float, ms_total: float,
                    fine_skipped: bool, split: bool,
+                   frame_hw: tuple[int, int],
                    scale: float) -> np.ndarray:
     """Compose the final display image (single or split).
 
-    All text overlays are drawn AFTER the scale step so font sizes are
-    consistent regardless of the native panel resolution.
+    Steps:
+      1. Normalise every panel to the full frame size (so mask panels
+         are never smaller than the camera frame).
+      2. Apply preview_scale to reach display resolution.
+      3. Composite panels side-by-side (split) or solo.
+      4. Draw ALL text overlays at display resolution so they are
+         never shrunken or covered by tiny panel content.
     """
-    # --- 1. Scale the raw panel(s) to display size FIRST ---
-    def _scale(img):
+    TARGET_H, TARGET_W = frame_hw
+
+    def _norm(img: np.ndarray) -> np.ndarray:
+        """Upscale to full frame size (nearest-neighbour keeps mask pixels crisp)."""
+        h, w = img.shape[:2]
+        if h == TARGET_H and w == TARGET_W:
+            return img.copy()
+        return cv2.resize(img, (TARGET_W, TARGET_H), interpolation=cv2.INTER_NEAREST)
+
+    def _display_scale(img: np.ndarray) -> np.ndarray:
         if scale == 1.0:
             return img.copy()
         return cv2.resize(img, None, fx=scale, fy=scale,
-                          interpolation=cv2.INTER_NEAREST)
+                          interpolation=cv2.INTER_AREA)
 
-    left_d = _scale(left)
+    # --- 1 + 2: normalise then scale each panel ---
+    left_d  = _display_scale(_norm(left))
+    right_d = _display_scale(_norm(right)) if (split and right is not None) else None
 
-    if split and right is not None:
-        right_d = _scale(right)
-        # Match heights after scaling (rounding may differ by 1px)
-        H = left_d.shape[0]
-        if right_d.shape[0] != H:
-            right_d = cv2.resize(right_d, (right_d.shape[1], H))
-        divider = np.full((H, 3, 3), (40, 40, 40), dtype=np.uint8)
+    # --- 3: composite ---
+    if right_d is not None:
+        PH = left_d.shape[0]
+        if right_d.shape[0] != PH:
+            right_d = cv2.resize(right_d, (right_d.shape[1], PH))
+        divider = np.full((PH, 3, 3), (40, 40, 40), dtype=np.uint8)
         disp = np.hstack([left_d, divider, right_d])
         lw = left_d.shape[1]
-        rw = right_d.shape[1]
     else:
         disp = left_d
         lw = disp.shape[1]
-        rw = 0
 
     DH, DW = disp.shape[:2]
 
-    # --- 2. Panel name bars (drawn at display resolution) ---
+    # --- 4: top label bar (drawn on the composited image) ---
     BAR_H = 24
-    if split:
+    if right_d is not None:
         cv2.rectangle(disp, (0, 0), (lw, BAR_H), (25, 25, 25), -1)
         cv2.rectangle(disp, (lw + 3, 0), (DW, BAR_H), (25, 25, 25), -1)
         cv2.putText(disp, f"L: {left_name}",
@@ -332,13 +333,13 @@ def _build_display(left: np.ndarray, right: np.ndarray | None,
                     (6, BAR_H - 6), cv2.FONT_HERSHEY_SIMPLEX,
                     0.52, (180, 180, 180), 1, cv2.LINE_AA)
 
-    # --- 3. HUD strip at the bottom ---
+    # --- 5: HUD strip at bottom ---
     HUD_H = 42
     cv2.rectangle(disp, (0, DH - HUD_H), (DW, DH), (15, 15, 15), -1)
 
-    fine_note = "  ⚠ fine skipped" if fine_skipped else ""
-    mode_txt = "SPLIT" if split else "SINGLE"
-    line1 = f"fps {fps:5.1f}  {ms_total:5.1f}ms  {stage_label}{fine_note}  [{mode_txt}]"
+    fine_note = "  ! fine skipped" if fine_skipped else ""
+    mode_txt  = "SPLIT" if split else "SINGLE"
+    line1 = f"fps {fps:4.1f}  {ms_total:5.1f}ms  [{mode_txt}]{fine_note}"
     line2 = "f/1-7=left   S+f/1-7=right   s=split   o=overlay   space=pause   q=quit"
 
     cv2.putText(disp, line1,
@@ -348,8 +349,19 @@ def _build_display(left: np.ndarray, right: np.ndarray | None,
                 (8, DH - HUD_H + 34), cv2.FONT_HERSHEY_SIMPLEX,
                 0.40, (120, 120, 120), 1, cv2.LINE_AA)
 
-    # --- 4. Stage badge top-right ---
-    _stage_badge(disp, stage_label)
+    # --- 6: stage badge in the bottom-right corner of the HUD strip ---
+    colors = {"FINE": (0, 180, 0), "COARSE": (0, 140, 255),
+              "NONE": (50, 50, 50), "PAUSED": (80, 80, 80)}
+    badge_col = colors.get(stage_label, (80, 80, 80))
+    (tw, th), _ = cv2.getTextSize(stage_label, cv2.FONT_HERSHEY_SIMPLEX, 0.52, 1)
+    bx1 = DW - 6
+    bx0 = bx1 - tw - 12
+    by0 = DH - HUD_H + 4
+    by1 = DH - 4
+    cv2.rectangle(disp, (bx0, by0), (bx1, by1), badge_col, -1)
+    cv2.putText(disp, stage_label,
+                (bx0 + 6, by0 + th + (by1 - by0 - th) // 2),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 0, 0), 1, cv2.LINE_AA)
 
     return disp
 
@@ -507,7 +519,9 @@ def main():
                 left_img, right_img,
                 _panel_label(left_mode), _panel_label(right_mode),
                 stage_label, fps_est, ms_total,
-                fine_skipped > 0.5, split_view, preview_scale,
+                fine_skipped > 0.5, split_view,
+                frame_hw=frame.shape[:2],
+                scale=preview_scale,
             )
             cv2.imshow(window_name, disp)
 
