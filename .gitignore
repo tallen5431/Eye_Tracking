@@ -1,0 +1,9 @@
+eye_pipeline/images/
+*.ipynb
+# Ignore Jupyter notebook checkpoints
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
+# Ignore Python bytecode caches
+__pycache__/
+**/__pycache__/

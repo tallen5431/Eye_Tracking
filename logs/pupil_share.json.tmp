@@ -1,0 +1,13 @@
+{
+"ellipse": {
+"cx": 0.0,
+"cy": 275.0
+},
+"frame_w": 480,
+"frame_h": 640,
+"confidence": 1.0,
+"ts": 1771368053.560568,
+"timing_ms": 1.342300000032992,
+"stage": "FINE",
+"fine_skipped": 0.0
+}
