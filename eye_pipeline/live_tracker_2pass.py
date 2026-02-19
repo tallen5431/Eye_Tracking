@@ -284,39 +284,73 @@ def _build_display(left: np.ndarray, right: np.ndarray | None,
                    stage_label: str, fps: float, ms_total: float,
                    fine_skipped: bool, split: bool,
                    scale: float) -> np.ndarray:
-    """Compose the final display image (single or split)."""
+    """Compose the final display image (single or split).
+
+    All text overlays are drawn AFTER the scale step so font sizes are
+    consistent regardless of the native panel resolution.
+    """
+    # --- 1. Scale the raw panel(s) to display size FIRST ---
+    def _scale(img):
+        if scale == 1.0:
+            return img.copy()
+        return cv2.resize(img, None, fx=scale, fy=scale,
+                          interpolation=cv2.INTER_NEAREST)
+
+    left_d = _scale(left)
+
     if split and right is not None:
-        # Resize both panels to same height then stack side-by-side
-        H = left.shape[0]
-        if right.shape[0] != H:
-            right = cv2.resize(right, (right.shape[1], H))
-        divider = np.full((H, 3, 3), (60, 60, 60), dtype=np.uint8)
-        disp = np.hstack([left, divider, right])
-
-        # Label bars at top of each panel
-        lw = left.shape[1]
-        rw = right.shape[1]
-        cv2.rectangle(disp, (0, 0), (lw, 22), (30, 30, 30), -1)
-        cv2.rectangle(disp, (lw + 3, 0), (lw + 3 + rw, 22), (30, 30, 30), -1)
-        cv2.putText(disp, f"LEFT: {left_name}", (6, 16),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.52, (200, 200, 200), 1, cv2.LINE_AA)
-        cv2.putText(disp, f"RIGHT: {right_name}", (lw + 9, 16),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.52, (200, 200, 200), 1, cv2.LINE_AA)
+        right_d = _scale(right)
+        # Match heights after scaling (rounding may differ by 1px)
+        H = left_d.shape[0]
+        if right_d.shape[0] != H:
+            right_d = cv2.resize(right_d, (right_d.shape[1], H))
+        divider = np.full((H, 3, 3), (40, 40, 40), dtype=np.uint8)
+        disp = np.hstack([left_d, divider, right_d])
+        lw = left_d.shape[1]
+        rw = right_d.shape[1]
     else:
-        disp = left.copy()
+        disp = left_d
+        lw = disp.shape[1]
+        rw = 0
 
-    # HUD
-    fine_note = " (fine skipped)" if fine_skipped else ""
-    lines = [
-        f"fps~{fps:5.1f}  ms={ms_total:5.1f}  stage={stage_label}{fine_note}",
-        f"{'SPLIT' if split else 'SINGLE'}  {HOTKEY_HELP}",
-    ]
-    disp = _hud(disp, lines)
+    DH, DW = disp.shape[:2]
+
+    # --- 2. Panel name bars (drawn at display resolution) ---
+    BAR_H = 24
+    if split:
+        cv2.rectangle(disp, (0, 0), (lw, BAR_H), (25, 25, 25), -1)
+        cv2.rectangle(disp, (lw + 3, 0), (DW, BAR_H), (25, 25, 25), -1)
+        cv2.putText(disp, f"L: {left_name}",
+                    (6, BAR_H - 6), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.52, (180, 180, 180), 1, cv2.LINE_AA)
+        cv2.putText(disp, f"R: {right_name}",
+                    (lw + 6, BAR_H - 6), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.52, (180, 180, 180), 1, cv2.LINE_AA)
+    else:
+        cv2.rectangle(disp, (0, 0), (DW, BAR_H), (25, 25, 25), -1)
+        cv2.putText(disp, left_name,
+                    (6, BAR_H - 6), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.52, (180, 180, 180), 1, cv2.LINE_AA)
+
+    # --- 3. HUD strip at the bottom ---
+    HUD_H = 42
+    cv2.rectangle(disp, (0, DH - HUD_H), (DW, DH), (15, 15, 15), -1)
+
+    fine_note = "  ⚠ fine skipped" if fine_skipped else ""
+    mode_txt = "SPLIT" if split else "SINGLE"
+    line1 = f"fps {fps:5.1f}  {ms_total:5.1f}ms  {stage_label}{fine_note}  [{mode_txt}]"
+    line2 = "f/1-7=left   S+f/1-7=right   s=split   o=overlay   space=pause   q=quit"
+
+    cv2.putText(disp, line1,
+                (8, DH - HUD_H + 16), cv2.FONT_HERSHEY_SIMPLEX,
+                0.48, (0, 220, 0), 1, cv2.LINE_AA)
+    cv2.putText(disp, line2,
+                (8, DH - HUD_H + 34), cv2.FONT_HERSHEY_SIMPLEX,
+                0.40, (120, 120, 120), 1, cv2.LINE_AA)
+
+    # --- 4. Stage badge top-right ---
     _stage_badge(disp, stage_label)
 
-    if scale != 1.0:
-        disp = cv2.resize(disp, None, fx=scale, fy=scale,
-                          interpolation=cv2.INTER_AREA)
     return disp
 
 
