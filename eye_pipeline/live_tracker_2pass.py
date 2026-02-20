@@ -421,10 +421,9 @@ def main():
     last_res   = None
     last_frame = None
 
+    _window_placed = False   # deferred until after first imshow (X11 requirement)
     if preview:
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-        if preview_x >= 0 and preview_y >= 0:
-            cv2.moveWindow(window_name, preview_x, preview_y)
 
     n_modes = len(STAGE_NAMES)
 
@@ -528,6 +527,12 @@ def main():
                 scale=preview_scale,
             )
             cv2.imshow(window_name, disp)
+
+            # Move the window once after the first imshow so the X11 window
+            # manager has actually mapped it (moveWindow is a no-op before that)
+            if not _window_placed and preview_x >= 0 and preview_y >= 0:
+                cv2.moveWindow(window_name, preview_x, preview_y)
+                _window_placed = True
 
         # --- key handling ---
         if preview:
