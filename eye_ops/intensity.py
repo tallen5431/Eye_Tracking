@@ -26,6 +26,10 @@ def step2_intensity(roi_small_bgr):
 
     if mode == "clahe_gray":
         g = cv2.cvtColor(roi_small_bgr, cv2.COLOR_BGR2GRAY)
+        gamma = float(getattr(S, "CLAHE_GAMMA", 1.0))
+        if gamma != 1.0:
+            lut = (np.arange(256, dtype=np.float32) / 255.0) ** gamma * 255.0
+            g = cv2.LUT(g, lut.astype(np.uint8))
         clahe = cv2.createCLAHE(clipLimit=float(S.CLAHE_CLIP), tileGridSize=tuple(S.CLAHE_TILE))
         return clahe.apply(g)
 

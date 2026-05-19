@@ -40,8 +40,10 @@ DOWNSCALE = 0.1
 STEP2_MODE = "clahe_gray"
 
 # CLAHE params (only used in clahe_* modes)
-CLAHE_CLIP = 2.0
-CLAHE_TILE = (8, 8)
+# CLAHE_GAMMA < 1.0 brightens dim images before contrast enhancement (1.0 = off)
+CLAHE_GAMMA = 0.6
+CLAHE_CLIP = 4.0
+CLAHE_TILE = (4, 4)
 
 # Blackhat params (only used in blackhat_gray)
 BLACKHAT_K = 21
@@ -132,7 +134,7 @@ DOWNSCALE_FINE = 0.2
 PCT_FINE = 5
 BLUR_K_FINE = 0
 OPEN_K_FINE = 0
-CLOSE_K_FINE = 17
+CLOSE_K_FINE = 11
 
 MIN_AREA_FINE = 0
 MAX_AREA_FINE = 250000
